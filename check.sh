@@ -39,12 +39,6 @@ install_pkg iperf3 smartmontools curl lshw dmidecode ethtool
 echo -e "${INFO}===== ІНФОРМАЦІЯ ПРО СЕРВЕР =====${RESET}"
 
 # ================== Видалення користувачів ==================
-echo -e "\n${INFO}[ВИДАЛЕННЯ КОРИСТУВАЧІВ]${RESET}"
-awk -F: '$1 != "root" && $1 != "nobody" && $1 != "nogroup" && $6 ~ /^\/home\//' /etc/passwd | \
-while IFS=: read -r username _ _ _ _ homedir _; do
-    echo "Видаляю користувача: $username та його домашню директорію $homedir"
-    sudo userdel -r "$username" 2>/dev/null || echo "Не вдалося видалити $username або директорія відсутня"
-done
 
 # ================== Диски ==================
 echo -e "\n${INFO}[ДИСКИ]${RESET}"
