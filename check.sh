@@ -156,14 +156,11 @@ round_mem() {
     echo $mem
 }
 mem_rounded=$(round_mem $mem_total_gb)
-echo "Total RAM: ${mem_rounded} GB"
 
 # Типи пам'яті
 mem_types=$(sudo dmidecode -t memory | grep -i "Type:" | grep -E "DDR3|DDR4|DDR5" | sort -u | xargs)
-echo "Memory types: $mem_types"
 
 # ================== RAM MODULES SUMMARY ==================
-echo -e "\n${INFO}[RAM MODULES SUMMARY]${RESET}"
 declare -A ram_count
 
 # Беремо лише ті Size, де є число + GB
@@ -172,10 +169,16 @@ while read -r gb; do
     ram_count[$gb]=$((ram_count[$gb]+1))
 done < <(sudo dmidecode -t memory | grep -oP "Size:\s+\K[0-9]+(?=\s+GB)")
 
-# Вивід у форматі "кількість - розмір GB", відсортувати по розміру
+# Формуємо підсумковий рядок у форматі "N x SizeGB"
+summary=""
 for s in $(printf "%s\n" "${!ram_count[@]}" | sort -n); do
-    echo "${ram_count[$s]} - ${s}GB"
+    summary+="${ram_count[$s]} x ${s}GB, "
 done
+summary=${summary%, }  # прибираємо останню кому
+
+# Вивід
+echo "Total RAM: ${mem_rounded} GB (${summary})"
+echo "Memory types: $mem_types"
 
 
 
