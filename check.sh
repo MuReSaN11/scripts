@@ -141,8 +141,10 @@ echo "Cores: $cores"
 # ================== RAM ==================
 echo -e "\n${INFO}[RAM]${RESET}"
 
+# Загальна пам'ять у ГБ
 mem_total_gb=$(free -g | awk '/Mem:/ {print $2}')
 
+# Округлення до найближчих 16GB
 round_mem() {
     local mem=$1
     local rem=$((mem % 16))
@@ -156,20 +158,20 @@ round_mem() {
 mem_rounded=$(round_mem $mem_total_gb)
 echo "Total RAM: ${mem_rounded} GB"
 
+# Типи пам'яті
 mem_types=$(sudo dmidecode -t memory | grep -i "Type:" | grep -E "DDR3|DDR4|DDR5" | sort -u | xargs)
 echo "Memory types: $mem_types"
 
-echo -e "\n${INFO}[RAM MODULES DETAILS]${RESET}"
-slot=0
+# Деталі по модулях з підрахунком
+echo -e "\n${INFO}[RAM MODULES SUMMARY]${RESET}"
 sudo dmidecode -t memory | awk '
-/Memory Device$/ {slot++}
-/Size:/ { 
-    if ($2 != "No") {
-        printf "Slot %d: %s %s\n", slot, $2, $3
+/Memory Device$/ {getline; size=""; while($0 !~ /^$/){if($1=="Size:" && $2 != "No") size=$2; getline} if(size!="") a[size]++ }
+END {
+    for (s in a) {
+        printf "%d - %s GB\n", a[s], s
     }
-}
-END { print "Total modules: " slot }
-'
+}'
+
 
 # ================== Network ==================
 echo -e "\n${INFO}[NETWORK]${RESET}"
