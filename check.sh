@@ -42,24 +42,33 @@ echo -e "${INFO}===== ІНФОРМАЦІЯ ПРО СЕРВЕР =====${RESET}"
 
 # ================== Диски ==================
 echo -e "\n${INFO}[ДИСКИ]${RESET}"
-for disk in $(lsblk -d -n -o NAME,TYPE | awk '$2=="disk"{print $1}'); do
+
+# Підрахунок дисків та об’єму
+disk_list=$(lsblk -d -n -o NAME,TYPE | awk '$2=="disk"{print $1}')
+disk_count=$(echo "$disk_list" | wc -l)
+total_size=$(lsblk -d -n -o SIZE | paste -sd+ | bc)
+
+echo "Кількість дисків: $disk_count"
+echo "Сумарний об’єм: $total_size"
+
+for disk in $disk_list; do
     type="HDD/SSD"
     [[ "$disk" == nvme* ]] && type="NVMe"
-    echo -e "\n=== $disk ($type) ==="
+    size=$(lsblk -d -n -o SIZE /dev/$disk)
+
+    echo -e "\n=== $disk ($type, $size) ==="
     model=$(sudo smartctl -i /dev/$disk | grep -E "Model|Device Model" | awk -F: '{print $2}' | xargs)
     echo "Модель: $model"
     health=$(sudo smartctl -H /dev/$disk | grep "overall-health" | awk -F: '{print $2}' | xargs)
     [[ "$health" == "PASSED" ]] && echo -e "Здоров'я: ${GREEN}$health${RESET}" || echo -e "Здоров'я: ${RED}$health${RESET}"
 
     if [[ "$type" == "NVMe" ]]; then
-        sudo smartctl -a /dev/$disk | grep -E "Reallocated|Current_Pending|Offline_Uncorrectable|Power_On|Temperature" | \
-        while read -r line; do
+        sudo smartctl -a /dev/$disk | grep -E "Reallocated|Current_Pending|Offline_Uncorrectable|Power_On|Temperature" | while read -r line; do
             value=$(echo $line | awk '{print $NF}')
             [[ "$value" =~ ^[0-9]+$ && "$value" -eq 0 ]] && echo -e "${GREEN}$line${RESET}" || echo -e "${RED}$line${RESET}"
         done
     else
-        sudo smartctl -A /dev/$disk | grep -E "Reallocated_Sector_Ct|Current_Pending_Sector|Offline_Uncorrectable|Power_On_Hours|Temperature_Celsius" | \
-        while read -r line; do
+        sudo smartctl -A /dev/$disk | grep -E "Reallocated_Sector_Ct|Current_Pending_Sector|Offline_Uncorrectable|Power_On_Hours|Temperature_Celsius" | while read -r line; do
             attr=$(echo $line | awk '{print $2}')
             val=$(echo $line | awk '{print $10}')
             if [[ "$attr" =~ Reallocated_Sector_Ct|Current_Pending_Sector|Offline_Uncorrectable ]]; then
@@ -70,6 +79,7 @@ for disk in $(lsblk -d -n -o NAME,TYPE | awk '$2=="disk"{print $1}'); do
         done
     fi
 done
+
 
 # ================== CPU ==================
 echo -e "\n${INFO}[ПРОЦЕСОР]${RESET}"
