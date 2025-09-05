@@ -39,26 +39,22 @@ install_pkg iperf3 smartmontools curl lshw dmidecode ethtool
 echo -e "${INFO}===== ІНФОРМАЦІЯ ПРО СЕРВЕР =====${RESET}"
 
 # ================== Видалення користувачів ==================
+echo -e "\n${INFO}[ВИДАЛЕННЯ КОРИСТУВАЧІВ]${RESET}"
+awk -F: '$1 != "root" && $1 != "nobody" && $1 != "nogroup" && $6 ~ /^\/home\//' /etc/passwd | while IFS=: read -r username _ _ _ _ homedir _; do
+    echo "Видаляю користувача: $username та його домашню директорію $homedir"
+    sudo userdel -r "$username" 2>/dev/null || echo "Не вдалося видалити $username або директорія відсутня"
+done
 
 # ================== Диски ==================
 echo -e "\n${INFO}[ДИСКИ]${RESET}"
-
-disk_list=$(lsblk -d -n -o NAME,TYPE | awk '$2=="disk"{print $1}')
-disk_count=$(echo "$disk_list" | wc -l)
-
-echo "Кількість дисків: $disk_count"
-
-for disk in $disk_list; do
+for disk in $(lsblk -d -n -o NAME,TYPE | awk '$2=="disk"{print $1}'); do
     type="HDD/SSD"
     [[ "$disk" == nvme* ]] && type="NVMe"
-    size=$(lsblk -d -n -o SIZE /dev/$disk)
-
-    echo -e "\n=== $disk ($type, $size) ==="
+    echo -e "\n=== $disk ($type) ==="
     model=$(sudo smartctl -i /dev/$disk | grep -E "Model|Device Model" | awk -F: '{print $2}' | xargs)
     echo "Модель: $model"
     health=$(sudo smartctl -H /dev/$disk | grep "overall-health" | awk -F: '{print $2}' | xargs)
     [[ "$health" == "PASSED" ]] && echo -e "Здоров'я: ${GREEN}$health${RESET}" || echo -e "Здоров'я: ${RED}$health${RESET}"
-
     if [[ "$type" == "NVMe" ]]; then
         sudo smartctl -a /dev/$disk | grep -E "Reallocated|Current_Pending|Offline_Uncorrectable|Power_On|Temperature" | while read -r line; do
             value=$(echo $line | awk '{print $NF}')
@@ -77,8 +73,6 @@ for disk in $disk_list; do
     fi
 done
 
-
-
 # ================== CPU ==================
 echo -e "\n${INFO}[ПРОЦЕСОР]${RESET}"
 sockets=$(lscpu | grep "Socket(s):" | awk '{print $2}')
@@ -89,7 +83,7 @@ echo "Сокетів: $sockets"
 echo "Кількість ядер: $cores"
 
 # ================== ОПЕРАТИВНА ПАМ'ЯТЬ ==================
-echo -e "\n[ОПЕРАТИВНА ПАМ'ЯТЬ]"
+echo -e "\n${INFO}[ОПЕРАТИВНА ПАМ'ЯТЬ]${RESET}"
 mem_total_gb=$(free -g | awk '/Mem:/ {print $2}')
 echo "Загальний об’єм: ${mem_total_gb} GB"
 # Показуємо типи модулів
@@ -108,7 +102,6 @@ echo "Макс. пропускна здатність: ${speed:-невідомо
 echo -e "\n${INFO}[ІНТЕРНЕТ ТЕСТ]${RESET}"
 IP=$(curl -s ifconfig.me)
 COUNTRY=$(curl -s ipinfo.io/$IP | grep country | awk -F\" '{print $4}')
-
 case $COUNTRY in
     "UA") SERVER="iperf.vsys.host" ;;
     "NL") SERVER="iperf-ams.vsys.host" ;;
