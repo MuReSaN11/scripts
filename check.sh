@@ -140,9 +140,9 @@ echo "Cores: $cores"
 
 # ================== RAM ==================
 echo -e "\n${INFO}[RAM]${RESET}"
+
 mem_total_gb=$(free -g | awk '/Mem:/ {print $2}')
 
-# Round to nearest 16GB
 round_mem() {
     local mem=$1
     local rem=$((mem % 16))
@@ -154,10 +154,22 @@ round_mem() {
     echo $mem
 }
 mem_rounded=$(round_mem $mem_total_gb)
-
 echo "Total RAM: ${mem_rounded} GB"
+
 mem_types=$(sudo dmidecode -t memory | grep -i "Type:" | grep -E "DDR3|DDR4|DDR5" | sort -u | xargs)
 echo "Memory types: $mem_types"
+
+echo -e "\n${INFO}[RAM MODULES DETAILS]${RESET}"
+slot=0
+sudo dmidecode -t memory | awk '
+/Memory Device$/ {slot++}
+/Size:/ { 
+    if ($2 != "No") {
+        printf "Slot %d: %s %s\n", slot, $2, $3
+    }
+}
+END { print "Total modules: " slot }
+'
 
 # ================== Network ==================
 echo -e "\n${INFO}[NETWORK]${RESET}"
