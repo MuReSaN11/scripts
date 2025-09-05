@@ -162,22 +162,28 @@ echo "Total RAM: ${mem_rounded} GB"
 mem_types=$(sudo dmidecode -t memory | grep -i "Type:" | grep -E "DDR3|DDR4|DDR5" | sort -u | xargs)
 echo "Memory types: $mem_types"
 
-# Деталі по слотах з підрахунком кількості модулів одного розміру
+# ================== RAM MODULES SUMMARY ==================
 echo -e "\n${INFO}[RAM MODULES SUMMARY]${RESET}"
 declare -A ram_count
 
+# Проходимо всі Memory Device і беремо тільки реальні модулі
 while read -r size; do
-    # Пропускаємо None і порожні рядки
-    [[ -z "$size" || "$size" == "No Module Installed" || "$size" == "Size: None" ]] && continue
-    # Витягуємо число
-    gb=$(echo $size | awk '{print $1}')
-    ram_count[$gb]=$((ram_count[$gb]+1))
-done < <(sudo dmidecode -t memory | grep "Size:")
+    [[ -z "$size" ]] && continue
+    ram_count[$size]=$((ram_count[$size]+1))
+done < <(sudo dmidecode -t memory | awk '
+/Memory Device$/ {in_device=1; next}
+/^$/ {in_device=0}
+/Size:/ && in_device {
+    if ($2 != "No") {
+        print $2
+    }
+}')
 
 # Вивід у форматі "кількість - розмір GB"
 for s in "${!ram_count[@]}"; do
     echo "${ram_count[$s]} - ${s}GB"
 done
+
 
 
 
