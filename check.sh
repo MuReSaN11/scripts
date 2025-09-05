@@ -47,10 +47,21 @@ done
 
 # ================== Диски ==================
 echo -e "\n${INFO}[ДИСКИ]${RESET}"
-for disk in $(lsblk -d -n -o NAME,TYPE | awk '$2=="disk"{print $1}'); do
+
+# Підрахунок дисків та об’єму
+disk_list=$(lsblk -d -n -o NAME,TYPE | awk '$2=="disk"{print $1}')
+disk_count=$(echo "$disk_list" | wc -l)
+total_size=$(lsblk -d -n -o SIZE | paste -sd+ | bc)
+
+echo "Кількість дисків: $disk_count"
+echo "Сумарний об’єм: $total_size"
+
+for disk in $disk_list; do
     type="HDD/SSD"
     [[ "$disk" == nvme* ]] && type="NVMe"
-    echo -e "\n=== $disk ($type) ==="
+    size=$(lsblk -d -n -o SIZE /dev/$disk)
+
+    echo -e "\n=== $disk ($type, $size) ==="
     model=$(sudo smartctl -i /dev/$disk | grep -E "Model|Device Model" | awk -F: '{print $2}' | xargs)
     echo "Модель: $model"
     health=$(sudo smartctl -H /dev/$disk | grep "overall-health" | awk -F: '{print $2}' | xargs)
@@ -73,6 +84,7 @@ for disk in $(lsblk -d -n -o NAME,TYPE | awk '$2=="disk"{print $1}'); do
         done
     fi
 done
+
 
 # ================== CPU ==================
 echo -e "\n${INFO}[ПРОЦЕСОР]${RESET}"
