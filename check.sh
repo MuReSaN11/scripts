@@ -120,7 +120,7 @@ if [[ "$model" =~ "Samsung" && ("$model" =~ "980 PRO" || "$model" =~ "990 PRO") 
     # Порівняння версій (рядок < мінімальний)
     if [[ "$fw" < "$min_fw1" ]]; then
         echo -e "${RED}$fw — Update recommended!${RESET}"
-        echo -e "Рекомендую оновитись через Samsung Magician, якщо прошивка старіша за 4B2QGXA7 або 5B2QGXA7"
+        echo -e "${RED}Рекомендую оновитись через Samsung Magician, якщо прошивка старіша за 4B2QGXA7 або 5B2QGXA7${RESET}"
     else
         echo -e "${GREEN}$fw — Firmware is up-to-date${RESET}"
     fi
