@@ -47,35 +47,66 @@ done
 
 # ================== Disks ==================
 echo -e "\n${INFO}[DISKS]${RESET}"
-for disk in $(lsblk -d -n -o NAME,TYPE | awk '$2=="disk"{print $1}'); do
-    type="HDD/SSD"
-    [[ "$disk" == nvme* ]] && type="NVMe"
-    size=$(lsblk -dn -o SIZE /dev/$disk)
 
-    echo -e "\n=== $disk ($type) ==="
-    echo "Size: $size"
-    model=$(sudo smartctl -i /dev/$disk | grep -E "Model|Device Model" | awk -F: '{print $2}' | xargs)
-    echo "Model: $model"
-    health=$(sudo smartctl -H /dev/$disk | grep "overall-health" | awk -F: '{print $2}' | xargs)
-    [[ "$health" == "PASSED" ]] && echo -e "Health: ${GREEN}$health${RESET}" || echo -e "Health: ${RED}$health${RESET}"
+# Перевіряємо чи є MegaRAID
+raid_disks=$(smartctl --scan | grep megaraid || true)
 
-    if [[ "$type" == "NVMe" ]]; then
-        sudo smartctl -a /dev/$disk | grep -E "Reallocated|Current_Pending|Offline_Uncorrectable|Power_On|Temperature" | while read -r line; do
-            value=$(echo $line | awk '{print $NF}')
-            [[ "$value" =~ ^[0-9]+$ && "$value" -eq 0 ]] && echo -e "${GREEN}$line${RESET}" || echo -e "${RED}$line${RESET}"
-        done
-    else
-        sudo smartctl -A /dev/$disk | grep -E "Reallocated_Sector_Ct|Current_Pending_Sector|Offline_Uncorrectable|Power_On_Hours|Temperature_Celsius" | while read -r line; do
-            attr=$(echo $line | awk '{print $2}')
+if [ -n "$raid_disks" ]; then
+    echo -e "${INFO}MegaRAID detected — scanning physical drives...${RESET}"
+    echo "$raid_disks" | while read -r line; do
+        dev=$(echo "$line" | awk '{print $1}')
+        num=$(echo "$line" | grep -o 'megaraid,[0-9]\+' | cut -d, -f2)
+
+        echo -e "\n=== RAID Physical Disk $num ==="
+        model=$(sudo smartctl -i -d megaraid,$num $dev | grep -E "Model|Device Model" | awk -F: '{print $2}' | xargs)
+        serial=$(sudo smartctl -i -d megaraid,$num $dev | grep "Serial Number" | awk -F: '{print $2}' | xargs)
+        health=$(sudo smartctl -H -d megaraid,$num $dev | grep "overall-health" | awk -F: '{print $2}' | xargs)
+        temp=$(sudo smartctl -A -d megaraid,$num $dev | grep -i Temperature | awk '{print $10}' | head -n1)
+
+        echo "Model: $model"
+        echo "Serial: $serial"
+        [[ "$health" == "PASSED" ]] && echo -e "Health: ${GREEN}$health${RESET}" || echo -e "Health: ${RED}$health${RESET}"
+        [[ -n "$temp" ]] && echo "Temperature: ${temp}°C"
+
+        # Основні атрибути
+        sudo smartctl -A -d megaraid,$num $dev | grep -E "Reallocated_Sector_Ct|Current_Pending_Sector|Offline_Uncorrectable" | while read -r line; do
             val=$(echo $line | awk '{print $10}')
-            if [[ "$attr" =~ Reallocated_Sector_Ct|Current_Pending_Sector|Offline_Uncorrectable ]]; then
-                [[ "$val" -eq 0 ]] && echo -e "${GREEN}$line${RESET}" || echo -e "${RED}$line${RESET}"
-            else
-                echo "$line"
-            fi
+            [[ "$val" -eq 0 ]] && echo -e "${GREEN}$line${RESET}" || echo -e "${RED}$line${RESET}"
         done
-    fi
-done
+    done
+else
+    # Якщо MegaRAID нема — перевіряємо звичайні диски
+    for disk in $(lsblk -d -n -o NAME,TYPE | awk '$2=="disk"{print $1}'); do
+        type="HDD/SSD"
+        [[ "$disk" == nvme* ]] && type="NVMe"
+        size=$(lsblk -dn -o SIZE /dev/$disk)
+
+        echo -e "\n=== $disk ($type) ==="
+        echo "Size: $size"
+        model=$(sudo smartctl -i /dev/$disk | grep -E "Model|Device Model" | awk -F: '{print $2}' | xargs)
+        echo "Model: $model"
+        health=$(sudo smartctl -H /dev/$disk | grep "overall-health" | awk -F: '{print $2}' | xargs)
+        [[ "$health" == "PASSED" ]] && echo -e "Health: ${GREEN}$health${RESET}" || echo -e "Health: ${RED}$health${RESET}"
+
+        if [[ "$type" == "NVMe" ]]; then
+            sudo smartctl -a /dev/$disk | grep -E "Reallocated|Current_Pending|Offline_Uncorrectable|Power_On|Temperature" | while read -r line; do
+                value=$(echo $line | awk '{print $NF}')
+                [[ "$value" =~ ^[0-9]+$ && "$value" -eq 0 ]] && echo -e "${GREEN}$line${RESET}" || echo -e "${RED}$line${RESET}"
+            done
+        else
+            sudo smartctl -A /dev/$disk | grep -E "Reallocated_Sector_Ct|Current_Pending_Sector|Offline_Uncorrectable|Power_On_Hours|Temperature_Celsius" | while read -r line; do
+                attr=$(echo $line | awk '{print $2}')
+                val=$(echo $line | awk '{print $10}')
+                if [[ "$attr" =~ Reallocated_Sector_Ct|Current_Pending_Sector|Offline_Uncorrectable ]]; then
+                    [[ "$val" -eq 0 ]] && echo -e "${GREEN}$line${RESET}" || echo -e "${RED}$line${RESET}"
+                else
+                    echo "$line"
+                fi
+            done
+        fi
+    done
+fi
+
 
 # ================== CPU ==================
 echo -e "\n${INFO}[CPU]${RESET}"
