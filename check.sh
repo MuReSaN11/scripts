@@ -166,22 +166,16 @@ echo "Memory types: $mem_types"
 echo -e "\n${INFO}[RAM MODULES SUMMARY]${RESET}"
 declare -A ram_count
 
-# Витягуємо лише розмір у GB з Memory Device
+# Беремо лише ті Size, де є число + GB
 while read -r gb; do
     [[ -z "$gb" ]] && continue
     ram_count[$gb]=$((ram_count[$gb]+1))
-done < <(sudo dmidecode -t memory | awk '
-/Memory Device$/ {in_device=1; next}
-/^$/ {in_device=0}
-/Size:/ && in_device && $2 != "No" {
-    print $2
-}')
+done < <(sudo dmidecode -t memory | grep -oP "Size:\s+\K[0-9]+(?=\s+GB)")
 
 # Вивід у форматі "кількість - розмір GB", відсортувати по розміру
 for s in $(printf "%s\n" "${!ram_count[@]}" | sort -n); do
     echo "${ram_count[$s]} - ${s}GB"
 done
-
 
 
 
