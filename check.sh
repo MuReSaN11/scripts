@@ -33,26 +33,43 @@ install_pkg() {
     fi
 }
 
-# ================== Встановлення необхідного ==================
-install_pkg iperf3 smartmontools curl lshw dmidecode ethtool
+# ================== Перевірка та встановлення пакетів ==================
+MISSING=()
+command -v iperf3 >/dev/null 2>&1 || MISSING+=("iperf3")
+command -v smartctl >/dev/null 2>&1 || MISSING+=("smartmontools")
+
+if [ ${#MISSING[@]} -gt 0 ]; then
+    echo -e "${INFO}[INFO] Встановлюю відсутні пакети: ${MISSING[*]}${RESET}"
+    install_pkg "${MISSING[@]}" curl lshw dmidecode ethtool
+else
+    echo -e "${INFO}[INFO] Усі необхідні пакети вже встановлені${RESET}"
+fi
 
 echo -e "${INFO}===== ІНФОРМАЦІЯ ПРО СЕРВЕР =====${RESET}"
 
-# ================== Користувачі ==================
-echo -e "\n${INFO}[КОРИСТУВАЧІ]${RESET}"
-awk -F: '$1 != "root" && $1 != "nobody" && $1 != "nogroup" && $6 ~ /^\/home\//' /etc/passwd | \
-while IFS=: read -r username _ _ _ _ homedir _; do
-    echo -e "Знайдено користувача: ${RED}$username${RESET} (домашня директорія: $homedir)"
+# ================== Видалення користувачів ==================
+echo -e "\n${INFO}[ВИДАЛЕННЯ КОРИСТУВАЧІВ]${RESET}"
+awk -F: '$1 != "root" && $1 != "nobody" && $1 != "nogroup" && $6 ~ /^\/home\//' /etc/passwd | while IFS=: read -r username _ _ _ _ homedir _; do
+    echo -e "\nЗнайдено користувача: ${INFO}$username${RESET} (домашня директорія: $homedir)"
+    read -p "Хочете видалити цього користувача? [y/N]: " confirm
+    case "$confirm" in
+        [yY]|[yY][eE][sS])
+            echo "➡ Видаляю користувача: $username"
+            sudo userdel -r "$username" 2>/dev/null || echo "Не вдалося видалити $username або директорія відсутня"
+            ;;
+        *)
+            echo "⏩ Пропускаю користувача: $username"
+            ;;
+    esac
 done
-
-
 
 # ================== Диски ==================
 echo -e "\n${INFO}[ДИСКИ]${RESET}"
 for disk in $(lsblk -d -n -o NAME,TYPE | awk '$2=="disk"{print $1}'); do
     type="HDD/SSD"
     [[ "$disk" == nvme* ]] && type="NVMe"
-    echo -e "\n=== $disk ($type) ==="
+    size=$(lsblk -d -n -o SIZE /dev/$disk)
+    echo -e "\n=== $disk ($type, $size) ==="
     model=$(sudo smartctl -i /dev/$disk | grep -E "Model|Device Model" | awk -F: '{print $2}' | xargs)
     echo "Модель: $model"
     health=$(sudo smartctl -H /dev/$disk | grep "overall-health" | awk -F: '{print $2}' | xargs)
@@ -88,7 +105,6 @@ echo "Кількість ядер: $cores"
 echo -e "\n${INFO}[ОПЕРАТИВНА ПАМ'ЯТЬ]${RESET}"
 mem_total_gb=$(free -g | awk '/Mem:/ {print $2}')
 echo "Загальний об’єм: ${mem_total_gb} GB"
-# Показуємо типи модулів
 mem_types=$(sudo dmidecode -t memory | grep -i "Type:" | grep -E "DDR3|DDR4|DDR5" | sort -u | xargs)
 echo "Тип модулів: $mem_types"
 
