@@ -167,7 +167,7 @@ declare -A ram_count
 while read -r gb; do
     [[ -z "$gb" ]] && continue
     ram_count[$gb]=$((ram_count[$gb]+1))
-done < <(sudo dmidecode -t memory | grep -oP "Size:\s+\K[0-9]+(?=\s+GB)")
+done < <(sudo dmidecode -t memory | grep "Size:" | grep -v -E "Volatile|Logical|Cache|No Module" | grep -oP "[0-9]+(?=\s+GB)")
 
 # Формуємо підсумковий рядок у форматі "N x SizeGB"
 summary=""
