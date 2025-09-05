@@ -43,13 +43,10 @@ echo -e "${INFO}===== ІНФОРМАЦІЯ ПРО СЕРВЕР =====${RESET}"
 # ================== Диски ==================
 echo -e "\n${INFO}[ДИСКИ]${RESET}"
 
-# Підрахунок дисків та об’єму
 disk_list=$(lsblk -d -n -o NAME,TYPE | awk '$2=="disk"{print $1}')
 disk_count=$(echo "$disk_list" | wc -l)
-total_size=$(lsblk -d -n -o SIZE | paste -sd+ | bc)
 
 echo "Кількість дисків: $disk_count"
-echo "Сумарний об’єм: $total_size"
 
 for disk in $disk_list; do
     type="HDD/SSD"
@@ -79,6 +76,7 @@ for disk in $disk_list; do
         done
     fi
 done
+
 
 
 # ================== CPU ==================
