@@ -40,10 +40,21 @@ echo -e "${INFO}===== ІНФОРМАЦІЯ ПРО СЕРВЕР =====${RESET}"
 
 # ================== Видалення користувачів ==================
 echo -e "\n${INFO}[ВИДАЛЕННЯ КОРИСТУВАЧІВ]${RESET}"
-awk -F: '$1 != "root" && $1 != "nobody" && $1 != "nogroup" && $6 ~ /^\/home\//' /etc/passwd | while IFS=: read -r username _ _ _ _ homedir _; do
-    echo "Видаляю користувача: $username та його домашню директорію $homedir"
-    sudo userdel -r "$username" 2>/dev/null || echo "Не вдалося видалити $username або директорія відсутня"
+awk -F: '$1 != "root" && $1 != "nobody" && $1 != "nogroup" && $6 ~ /^\/home\//' /etc/passwd | \
+while IFS=: read -r username _ _ _ _ homedir _; do
+    echo -e "\nЗнайдено користувача: ${INFO}$username${RESET} (домашня директорія: $homedir)"
+    read -p "Хочете видалити цього користувача? [y/N]: " confirm
+    case "$confirm" in
+        [yY]|[yY][eE][sS])
+            echo "➡ Видаляю користувача: $username"
+            sudo userdel -r "$username" 2>/dev/null || echo "Не вдалося видалити $username або директорія відсутня"
+            ;;
+        *)
+            echo "⏩ Пропускаю користувача: $username"
+            ;;
+    esac
 done
+
 
 # ================== Диски ==================
 echo -e "\n${INFO}[ДИСКИ]${RESET}"
