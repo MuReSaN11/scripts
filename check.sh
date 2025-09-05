@@ -107,6 +107,25 @@ else
     done
 fi
 
+# ================== Samsung 980 PRO firmware check ==================
+if [[ "$model" =~ "Samsung" && "$model" =~ "980 PRO" ]]; then
+    echo -e "\n${INFO}[Samsung 980 PRO Firmware Check]${RESET}"
+    fw=$(sudo nvme id-ctrl /dev/$disk | grep "fr" | awk '{print $3}') # або sudo smartctl -a /dev/$disk | grep "Firmware Version" | awk '{print $3}'
+    echo -n "Firmware version: "
+    
+    # Порівняння з мінімальною безпечною версією
+    min_fw1="4B2QGXA7"
+    min_fw2="5B2QGXA7"
+    
+    if [[ "$fw" < "$min_fw1" && "$fw" < "$min_fw2" ]]; then
+        echo -e "${RED}$fw — Update recommended!${RESET}"
+    else
+        echo -e "${GREEN}$fw — Firmware is up-to-date${RESET}"
+    fi
+    echo -e "Рекомендую оновитись через Samsung Magician, якщо прошивка старіша за 4B2QGXA7 або 5B2QGXA7"
+fi
+
+
 
 # ================== CPU ==================
 echo -e "\n${INFO}[CPU]${RESET}"
