@@ -13,14 +13,18 @@ install_pkg() {
         sudo apt-get install -y "$@" >/dev/null 2>&1
     elif command -v dnf >/dev/null 2>&1; then
         if grep -qi "AlmaLinux" /etc/os-release; then
-            echo -e "${INFO}[INFO] AlmaLinux detected — importing GPG key${RESET}"
-            sudo rpm --import https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux
+            echo -e "${INFO}[INFO] AlmaLinux detected — using local GPG key${RESET}"
+            if [ -f /etc/pki/rpm-gpg/RPM-GPG-KEY-AlmaLinux ]; then
+                sudo rpm --import /etc/pki/rpm-gpg/RPM-GPG-KEY-AlmaLinux || true
+            fi
         fi
         sudo dnf install -y "$@" >/dev/null 2>&1
     elif command -v yum >/dev/null 2>&1; then
         if grep -qi "AlmaLinux" /etc/os-release; then
-            echo -e "${INFO}[INFO] AlmaLinux detected — importing GPG key${RESET}"
-            sudo rpm --import https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux
+            echo -e "${INFO}[INFO] AlmaLinux detected — using local GPG key${RESET}"
+            if [ -f /etc/pki/rpm-gpg/RPM-GPG-KEY-AlmaLinux ]; then
+                sudo rpm --import /etc/pki/rpm-gpg/RPM-GPG-KEY-AlmaLinux || true
+            fi
         fi
         sudo yum install -y "$@" >/dev/null 2>&1
     elif command -v zypper >/dev/null 2>&1; then
@@ -32,6 +36,7 @@ install_pkg() {
         exit 1
     fi
 }
+
 
 # ================== Install required packages ==================
 install_pkg iperf3 smartmontools curl lshw dmidecode ethtool
