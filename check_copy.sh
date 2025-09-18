@@ -13,14 +13,18 @@ install_pkg() {
         sudo apt-get install -y "$@" >/dev/null 2>&1
     elif command -v dnf >/dev/null 2>&1; then
         if grep -qi "AlmaLinux" /etc/os-release; then
-            echo -e "${INFO}[INFO] AlmaLinux detected — importing GPG key${RESET}"
-            sudo rpm --import https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux
+            echo -e "${INFO}[INFO] AlmaLinux detected — using local GPG key${RESET}"
+            if [ -f /etc/pki/rpm-gpg/RPM-GPG-KEY-AlmaLinux ]; then
+                sudo rpm --import /etc/pki/rpm-gpg/RPM-GPG-KEY-AlmaLinux || true
+            fi
         fi
         sudo dnf install -y "$@" >/dev/null 2>&1
     elif command -v yum >/dev/null 2>&1; then
         if grep -qi "AlmaLinux" /etc/os-release; then
-            echo -e "${INFO}[INFO] AlmaLinux detected — importing GPG key${RESET}"
-            sudo rpm --import https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux
+            echo -e "${INFO}[INFO] AlmaLinux detected — using local GPG key${RESET}"
+            if [ -f /etc/pki/rpm-gpg/RPM-GPG-KEY-AlmaLinux ]; then
+                sudo rpm --import /etc/pki/rpm-gpg/RPM-GPG-KEY-AlmaLinux || true
+            fi
         fi
         sudo yum install -y "$@" >/dev/null 2>&1
     elif command -v zypper >/dev/null 2>&1; then
@@ -32,6 +36,7 @@ install_pkg() {
         exit 1
     fi
 }
+
 
 # ================== Install required packages ==================
 install_pkg iperf3 smartmontools curl lshw dmidecode ethtool
@@ -47,35 +52,87 @@ done
 
 # ================== Disks ==================
 echo -e "\n${INFO}[DISKS]${RESET}"
-for disk in $(lsblk -d -n -o NAME,TYPE | awk '$2=="disk"{print $1}'); do
-    type="HDD/SSD"
-    [[ "$disk" == nvme* ]] && type="NVMe"
-    size=$(lsblk -dn -o SIZE /dev/$disk)
 
-    echo -e "\n=== $disk ($type) ==="
-    echo "Size: $size"
-    model=$(sudo smartctl -i /dev/$disk | grep -E "Model|Device Model" | awk -F: '{print $2}' | xargs)
-    echo "Model: $model"
-    health=$(sudo smartctl -H /dev/$disk | grep "overall-health" | awk -F: '{print $2}' | xargs)
-    [[ "$health" == "PASSED" ]] && echo -e "Health: ${GREEN}$health${RESET}" || echo -e "Health: ${RED}$health${RESET}"
+# Перевіряємо чи є MegaRAID
+raid_disks=$(smartctl --scan | grep megaraid || true)
 
-    if [[ "$type" == "NVMe" ]]; then
-        sudo smartctl -a /dev/$disk | grep -E "Reallocated|Current_Pending|Offline_Uncorrectable|Power_On|Temperature" | while read -r line; do
-            value=$(echo $line | awk '{print $NF}')
-            [[ "$value" =~ ^[0-9]+$ && "$value" -eq 0 ]] && echo -e "${GREEN}$line${RESET}" || echo -e "${RED}$line${RESET}"
-        done
-    else
-        sudo smartctl -A /dev/$disk | grep -E "Reallocated_Sector_Ct|Current_Pending_Sector|Offline_Uncorrectable|Power_On_Hours|Temperature_Celsius" | while read -r line; do
-            attr=$(echo $line | awk '{print $2}')
+if [ -n "$raid_disks" ]; then
+    echo -e "${INFO}MegaRAID detected — scanning physical drives...${RESET}"
+    echo "$raid_disks" | while read -r line; do
+        dev=$(echo "$line" | awk '{print $1}')
+        num=$(echo "$line" | grep -o 'megaraid,[0-9]\+' | cut -d, -f2)
+
+        echo -e "\n=== RAID Physical Disk $num ==="
+        model=$(sudo smartctl -i -d megaraid,$num $dev | grep -E "Model|Device Model" | awk -F: '{print $2}' | xargs)
+        serial=$(sudo smartctl -i -d megaraid,$num $dev | grep "Serial Number" | awk -F: '{print $2}' | xargs)
+        health=$(sudo smartctl -H -d megaraid,$num $dev | grep "overall-health" | awk -F: '{print $2}' | xargs)
+        temp=$(sudo smartctl -A -d megaraid,$num $dev | grep -i Temperature | awk '{print $10}' | head -n1)
+
+        echo "Model: $model"
+        echo "Serial: $serial"
+        [[ "$health" == "PASSED" ]] && echo -e "Health: ${GREEN}$health${RESET}" || echo -e "Health: ${RED}$health${RESET}"
+        [[ -n "$temp" ]] && echo "Temperature: ${temp}°C"
+
+        # Основні атрибути
+        sudo smartctl -A -d megaraid,$num $dev | grep -E "Reallocated_Sector_Ct|Current_Pending_Sector|Offline_Uncorrectable" | while read -r line; do
             val=$(echo $line | awk '{print $10}')
-            if [[ "$attr" =~ Reallocated_Sector_Ct|Current_Pending_Sector|Offline_Uncorrectable ]]; then
-                [[ "$val" -eq 0 ]] && echo -e "${GREEN}$line${RESET}" || echo -e "${RED}$line${RESET}"
-            else
-                echo "$line"
-            fi
+            [[ "$val" -eq 0 ]] && echo -e "${GREEN}$line${RESET}" || echo -e "${RED}$line${RESET}"
         done
+    done
+else
+    # Якщо MegaRAID нема — перевіряємо звичайні диски
+    for disk in $(lsblk -d -n -o NAME,TYPE | awk '$2=="disk"{print $1}'); do
+        type="HDD/SSD"
+        [[ "$disk" == nvme* ]] && type="NVMe"
+        size=$(lsblk -dn -o SIZE /dev/$disk)
+
+        echo -e "\n=== $disk ($type) ==="
+        echo "Size: $size"
+        model=$(sudo smartctl -i /dev/$disk | grep -E "Model|Device Model" | awk -F: '{print $2}' | xargs)
+        echo "Model: $model"
+        health=$(sudo smartctl -H /dev/$disk | grep "overall-health" | awk -F: '{print $2}' | xargs)
+        [[ "$health" == "PASSED" ]] && echo -e "Health: ${GREEN}$health${RESET}" || echo -e "Health: ${RED}$health${RESET}"
+
+        if [[ "$type" == "NVMe" ]]; then
+            sudo smartctl -a /dev/$disk | grep -E "Reallocated|Current_Pending|Offline_Uncorrectable|Power_On|Temperature" | while read -r line; do
+                value=$(echo $line | awk '{print $NF}')
+                [[ "$value" =~ ^[0-9]+$ && "$value" -eq 0 ]] && echo -e "${GREEN}$line${RESET}" || echo -e "${RED}$line${RESET}"
+            done
+        else
+            sudo smartctl -A /dev/$disk | grep -E "Reallocated_Sector_Ct|Current_Pending_Sector|Offline_Uncorrectable|Power_On_Hours|Temperature_Celsius" | while read -r line; do
+                attr=$(echo $line | awk '{print $2}')
+                val=$(echo $line | awk '{print $10}')
+                if [[ "$attr" =~ Reallocated_Sector_Ct|Current_Pending_Sector|Offline_Uncorrectable ]]; then
+                    [[ "$val" -eq 0 ]] && echo -e "${GREEN}$line${RESET}" || echo -e "${RED}$line${RESET}"
+                else
+                    echo "$line"
+                fi
+            done
+        fi
+    done
+fi
+
+# ================== Samsung 980/990 PRO firmware check ==================
+if [[ "$model" =~ "Samsung" && ("$model" =~ "980 PRO" || "$model" =~ "990 PRO") ]]; then
+    echo -e "\n${INFO}[Samsung 980/990 PRO Firmware Check]${RESET}"
+    fw=$(sudo smartctl -i /dev/$disk | grep "Firmware Version" | awk -F: '{print $2}' | xargs)
+    echo -n "Firmware version: "
+
+    # Мінімальні безпечні версії для 980 PRO
+    min_fw1="4B2QGXA7"
+    min_fw2="5B2QGXA7"
+
+    # Порівняння версій (рядок < мінімальний)
+    if [[ "$fw" < "$min_fw1" ]]; then
+        echo -e "${RED}$fw — Update recommended!${RESET}"
+        echo -e "${RED}Рекомендую оновитись через Samsung Magician, якщо прошивка старіша за 4B2QGXA7 або 5B2QGXA7${RESET}"
+    else
+        echo -e "${GREEN}$fw — Firmware is up-to-date${RESET}"
     fi
-done
+fi
+
+
+
 
 # ================== CPU ==================
 echo -e "\n${INFO}[CPU]${RESET}"
@@ -88,9 +145,11 @@ echo "Cores: $cores"
 
 # ================== RAM ==================
 echo -e "\n${INFO}[RAM]${RESET}"
+
+# Загальна пам'ять у ГБ
 mem_total_gb=$(free -g | awk '/Mem:/ {print $2}')
 
-# Round to nearest 16GB
+# Округлення до найближчих 16GB
 round_mem() {
     local mem=$1
     local rem=$((mem % 16))
@@ -103,9 +162,30 @@ round_mem() {
 }
 mem_rounded=$(round_mem $mem_total_gb)
 
-echo "Total RAM: ${mem_rounded} GB"
+# Типи пам'яті
 mem_types=$(sudo dmidecode -t memory | grep -i "Type:" | grep -E "DDR3|DDR4|DDR5" | sort -u | xargs)
+
+# ================== RAM MODULES SUMMARY ==================
+declare -A ram_count
+
+# Беремо лише ті Size, де є число + GB
+while read -r gb; do
+    [[ -z "$gb" ]] && continue
+    ram_count[$gb]=$((ram_count[$gb]+1))
+done < <(sudo dmidecode -t memory | grep "Size:" | grep -v -E "Volatile|Logical|Cache|No Module" | grep -oP "[0-9]+(?=\s+GB)")
+
+# Формуємо підсумковий рядок у форматі "N x SizeGB"
+summary=""
+for s in $(printf "%s\n" "${!ram_count[@]}" | sort -n); do
+    summary+="${ram_count[$s]} x ${s}GB, "
+done
+summary=${summary%, }  # прибираємо останню кому
+
+# Вивід
+echo "Total RAM: ${mem_rounded} GB (${summary})"
 echo "Memory types: $mem_types"
+
+
 
 # ================== Network ==================
 echo -e "\n${INFO}[NETWORK]${RESET}"
