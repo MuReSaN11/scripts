@@ -1,31 +1,52 @@
 #!/bin/bash
 
-# Кольори
+# ================== Кольори та Стилі ==================
+BOLD="\e[1m"
+BLUE="\e[34m"
+CYAN="\e[36m"
+GREEN="\e[32m"
 YELLOW="\e[33m"
 RED="\e[31m"
+MAGENTA="\e[35m"
 RESET="\e[0m"
-INFO="\e[36m"
 
-# ================== Функція встановлення з очікуванням lock та прогресом ==================
+# Іконки
+CHECK="✔"
+INFO_ICON="ℹ"
+CPU_ICON="󰻠"
+RAM_ICON="󰍛"
+DISK_ICON="󰋊"
+NET_ICON="󰖩"
+
+# ================== Функції-помічники ==================
+print_header() {
+    echo -e "\n${BOLD}${CYAN}┌──────────────────────────────────────────────────────────┐${RESET}"
+    echo -e "${BOLD}${CYAN}│ %-56s │${RESET}" "$1"
+    echo -e "${BOLD}${CYAN}└──────────────────────────────────────────────────────────┘${RESET}"
+}
+
+print_row() {
+    printf "${BLUE}%-20s${RESET} : %s\n" "$1" "$2"
+}
+
+# ================== Встановлення пакетів ==================
 install_pkg() {
     local pkgs=("$@")
     if command -v apt-get >/dev/null 2>&1; then
-        # Перевірка на блокування apt іншими процесами
         while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 ; do
-            echo -ne "\r${RED}[WAIT]${RESET} Waiting for other package manager to finish..."
+            echo -ne "\r${RED}[WAIT]${RESET} Waiting for other package manager..."
             sleep 2
         done
 
         apt-get update -qq
-        echo -ne "${INFO}[INFO] Installing packages... 0%${RESET}"
+        echo -ne "${CYAN}${INFO_ICON} [1/2] Preparing system...${RESET}"
         
-        # Встановлення з відстеженням прогресу
         DEBIAN_FRONTEND=noninteractive apt-get install -y "${pkgs[@]}" -qq -o Dpkg::Use-Pty=0 2>&1 | \
         stdbuf -oL sed -n 's/^Progress: \[\([0-9]*\)%\].*/\1/p' | \
         while read prog; do
-            echo -ne "\r${INFO}[INFO] Installing packages... ${prog}%${RESET}"
+            echo -ne "\r${CYAN}${INFO_ICON} [2/2] Installing packages... ${prog}%${RESET}"
         done
-        echo -e "\r${INFO}[INFO] Installing packages... 100% - Done!${RESET}"
+        echo -e "\r${GREEN}${CHECK} Packages installed successfully!${RESET}             "
         
     elif command -v dnf >/dev/null 2>&1; then
         dnf install -y "${pkgs[@]}" --quiet
@@ -34,80 +55,73 @@ install_pkg() {
     fi
 }
 
-# Встановлення необхідних утиліт
-install_pkg iperf3 smartmontools curl lshw dmidecode ethtool
+clear
+echo -e "${BOLD}${MAGENTA}   🚀 SERVER DIAGNOSTIC TOOL${RESET}"
+echo -e "${CYAN}   $(date '+%Y-%m-%d %H:%M:%S')${RESET}"
 
-echo -e "\n${INFO}===== SERVER INFORMATION =====${RESET}"
+# Встановлення необхідних утиліт
+install_pkg iperf3 smartmontools curl lshw dmidecode ethtool > /dev/null
 
 # ================== OS Info ==================
-echo -e "${INFO}[OS INFO]${RESET}"
+print_header "💻 SYSTEM INFORMATION"
 if [ -f /etc/os-release ]; then
     OS_PRETTY=$(grep "PRETTY_NAME" /etc/os-release | cut -d'"' -f2)
-    # Жовтим підсвічуємо назву ОС
-    echo -e "${YELLOW}${OS_PRETTY}${RESET}"
+    print_row "Operating System" "${YELLOW}${OS_PRETTY}${RESET}"
 fi
+print_row "Kernel" "$(uname -r)"
+print_row "Uptime" "$(uptime -p)"
 
-# ================== Users ==================
-echo -e "\n${INFO}[USERS]${RESET}"
-awk -F: '$1 != "root" && $1 != "nobody" && $1 != "nogroup" && $6 ~ /^\/home\//' /etc/passwd \
-| while IFS=: read -r username _ _ _ _ homedir shell; do
-    echo -e "User: ${RED}$username${RESET}, Home: $homedir, Shell: $shell"
-done
+# ================== CPU & RAM ==================
+print_header "${CPU_ICON} CPU & ${RAM_ICON} MEMORY"
+cpu_model=$(lscpu | grep "Model name:" | sed 's/Model name:\s*//')
+[[ -z "$cpu_model" ]] && cpu_model=$(lscpu | grep "BIOS" | sed 's/BIOS\s*//')
+cores=$(lscpu | grep "^CPU(s):" | awk '{print $2}')
+print_row "CPU Model" "${YELLOW}$cpu_model${RESET}"
+print_row "Cores/Threads" "$cores"
+
+mem_total_mb=$(free -m | awk '/Mem:/ {print $2}')
+mem_total_gb=$(printf "%.1f" $(echo "$mem_total_mb/1024" | bc -l))
+print_row "Total RAM" "${YELLOW}${mem_total_gb} GB${RESET}"
 
 # ================== Disks ==================
-echo -e "\n${INFO}[DISKS]${RESET}"
+print_header "${DISK_ICON} STORAGE DEVICES"
 raid_disks=$(smartctl --scan | grep megaraid || true)
 
 if [ -n "$raid_disks" ]; then
     echo "$raid_disks" | while read -r line; do
         dev=$(echo "$line" | awk '{print $1}')
         num=$(echo "$line" | grep -o 'megaraid,[0-9]\+' | cut -d, -f2)
-        echo -e "\n${YELLOW}=== RAID Physical Disk $num ===${RESET}"
         model=$(smartctl -i -d megaraid,$num $dev | grep -E "Model|Device Model" | awk -F: '{print $2}' | xargs)
-        echo "Model: ${model:-Virtual/Unknown}"
+        print_row "RAID Disk $num" "${YELLOW}${model:-Unknown}${RESET}"
     done
 else
-    for disk in $(lsblk -d -n -o NAME,TYPE | awk '$2=="disk"{print $1}'); do
-        size=$(lsblk -dn -o SIZE /dev/$disk)
-        # Жовтим підсвічуємо заголовок диска
-        echo -e "\n${YELLOW}=== $disk ( $size) ===${RESET}"
-        model=$(smartctl -i /dev/$disk 2>/dev/null | grep -E "Model|Device Model" | awk -F: '{print $2}' | xargs)
-        [[ -z "$model" ]] && model=$(lsblk -dn -o MODEL /dev/$disk | xargs)
-        echo "Model: ${model:-Virtual/Generic}"
+    # Використовуємо lsblk для красивої таблиці
+    lsblk -dn -o NAME,SIZE,MODEL,TYPE | awk '$4=="disk"{printf "  %-10s %-10s %s\n", $1, $2, $3}' | while read -r line; do
+        echo -e "  ${YELLOW}→${RESET} $line"
     done
 fi
 
-# ================== Mount Points ==================
-echo -e "\n${INFO}[MOUNT POINTS]${RESET}"
-# Тільки реальні диски та розділи
-lsblk -o NAME,SIZE,FSTYPE,TYPE,MOUNTPOINT | grep -E "disk|part" | grep -vE "loop|ram|sr"
-
-# ================== CPU ==================
-echo -e "\n${INFO}[CPU]${RESET}"
-cpu_model=$(lscpu | grep "Model name:" | sed 's/Model name:\s*//')
-[[ -z "$cpu_model" ]] && cpu_model=$(lscpu | grep "BIOS" | sed 's/BIOS\s*//')
-# Жовтим підсвічуємо модель процесора
-echo -e "Model: ${YELLOW}$cpu_model${RESET}"
-echo "Cores: $(lscpu | grep "^CPU(s):" | awk '{print $2}')"
-
-# ================== RAM ==================
-echo -e "\n${INFO}[RAM]${RESET}"
-mem_total_mb=$(free -m | awk '/Mem:/ {print $2}')
-mem_total_gb=$(( (mem_total_mb + 512) / 1024 ))
-# Жовтим підсвічуємо кількість RAM
-echo -e "Total RAM: ${YELLOW}~${mem_total_gb} GB${RESET}"
+# ================== Users ==================
+print_header "👤 ACTIVE USERS (HOME)"
+awk -F: '$1 != "root" && $1 != "nobody" && $1 != "nogroup" && $6 ~ /^\/home\// {printf "  %-12s %-15s %s\n", $1, $7, $6}' /etc/passwd | while read -r u s h; do
+    echo -e "  ${RED}●${RESET} ${BOLD}$u${RESET} ($s) → $h"
+done
 
 # ================== Network ==================
-echo -e "\n${INFO}[NETWORK]${RESET}"
+print_header "${NET_ICON} NETWORK & INTERNET"
 iface=$(ls /sys/class/net | grep -v lo | head -n 1)
 speed=$(ethtool $iface 2>/dev/null | grep "Speed:" | awk '{print $2}')
-echo "Interface: $iface"
-echo "Max speed: ${speed:-Unknown}"
+print_row "Interface" "$iface"
+print_row "Max Speed" "${speed:-Unknown}"
 
-# ================== Internet / iperf3 ==================
-echo -e "\n${INFO}[INTERNET TEST]${RESET}"
-IP=$(curl -s ifconfig.me)
-COUNTRY=$(curl -s ipinfo.io/$IP | grep country | awk -F\" '{print $4}')
+IP=$(curl -s --max-time 5 ifconfig.me)
+GEO=$(curl -s --max-time 5 ipinfo.io/$IP)
+COUNTRY=$(echo "$GEO" | grep country | awk -F\" '{print $4}')
+CITY=$(echo "$GEO" | grep city | awk -F\" '{print $4}')
+
+print_row "External IP" "${BOLD}$IP${RESET} ($CITY, $COUNTRY)"
+
+# ================== iperf3 Test ==================
 case $COUNTRY in
     "UA") SERVER="iperf.vsys.host" ;;
     "NL") SERVER="iperf-ams.vsys.host" ;;
@@ -117,37 +131,31 @@ case $COUNTRY in
 esac
 
 if [ -n "$SERVER" ]; then
-    echo "Server: $SERVER"
-    # Запуск iperf3 у фоні
+    echo -e "\n${CYAN}🚀 Running Speedtest via $SERVER...${RESET}"
     iperf3 -c $SERVER -P 10 -f m -t 10 2>/dev/null > /tmp/iperf_res &
     iperf_pid=$!
 
-    # Таймер на 10 секунд
-    for i in {10..1}; do
+    # Візуальний прогрес-бар
+    for i in {1..10}; do
         if ps -p $iperf_pid > /dev/null; then
-            echo -ne "\rTesting speed... ${i}s left "
+            echo -ne "\r  ["; for j in $(seq 1 $i); do echo -ne "#"; done; for j in $(seq $i 9); do echo -ne "."; done; echo -ne "] ${i}0%"
             sleep 1
         fi
     done
     wait $iperf_pid
-    echo -e "\rTesting speed... Done!          "
+    echo -e "\r  ${GREEN}${CHECK} Test Completed!                      ${RESET}"
 
     RAW_RESULT=$(grep "\[SUM\].*receiver" /tmp/iperf_res | tail -n1)
     
-    # Жовтим підсвічуємо лише частину з GBytes
-    if [[ "$RAW_RESULT" =~ ([0-9.]+[[:space:]]GBytes) ]]; then
+    if [[ "$RAW_RESULT" =~ ([0-9.]+[[:space:]][MG]bits/sec) ]]; then
         VALUE="${BASH_REMATCH[1]}"
-        RESULT=$(echo "$RAW_RESULT" | sed "s/$VALUE/${YELLOW}$VALUE${RESET}/")
+        print_row "iperf3 Bandwidth" "${BOLD}${YELLOW}$VALUE${RESET}"
     else
-        RESULT="$RAW_RESULT"
+        echo -e "  ${RED}⚠ iperf3 test failed or timed out${RESET}"
     fi
-
     rm -f /tmp/iperf_res
-    echo "IP: $IP ($COUNTRY)"
-    echo -e "iperf3 result: ${RESULT:-"Test failed"}"
 else
-    echo "IP: $IP ($COUNTRY)"
-    echo "iperf3: No suitable server found"
+    echo -e "  ${RED}⚠ No speedtest server for your region${RESET}"
 fi
 
-echo -e "\n${INFO}===== END =====${RESET}"
+echo -e "\n${BOLD}${MAGENTA}================== END OF REPORT ==================${RESET}\n"
