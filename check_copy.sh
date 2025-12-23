@@ -27,10 +27,8 @@ install_pkg() {
     local pkgs=("$@")
     printf "${CYAN}i Preparing system and installing dependencies...${RESET}\n"
     
-    # Logic for different OS managers
     if command -v apt-get >/dev/null 2>&1; then
         apt-get update -qq >/dev/null 2>&1
-        # Simulated progress bar for installation
         (apt-get install -y "${pkgs[@]}" -qq > /dev/null 2>&1) &
     elif command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
         PM=$(command -v dnf || command -v yum)
@@ -43,7 +41,6 @@ install_pkg() {
     fi
 
     pkg_pid=$!
-    # Visual Progress Bar for Installation
     for i in {1..10}; do
         if ps -p $pkg_pid > /dev/null; then
             printf "\r  [${LIME}"; for j in $(seq 1 $i); do printf "#"; done; for j in $(seq $i 9); do printf "."; done; printf "${RESET}] ${i}0%%"
@@ -56,8 +53,8 @@ install_pkg() {
 
 # ================== Main Execution ==================
 clear
-printf "${BOLD}${MAGENTA}   🚀 SERVER DIAGNOSTICS${RESET}\n"
-printf "${CYAN}   Started: $(date '+%Y-%m-%d %H:%M:%S')${RESET}\n"
+printf "${BOLD}${MAGENTA}    🚀 SERVER DIAGNOSTICS${RESET}\n"
+printf "${CYAN}    Started: $(date '+%Y-%m-%d %H:%M:%S')${RESET}\n"
 
 install_pkg iperf3 smartmontools curl lshw dmidecode ethtool bc
 
@@ -81,8 +78,8 @@ print_row "Total RAM" "${YELLOW}$(echo "scale=1; $mem_mb/1024" | bc -l) GB${RESE
 print_header "👤 REGISTERED USERS"
 awk -F: '$1 != "root" && $1 != "nobody" && $1 != "nogroup" && $6 ~ /^\/home\// {printf "  '${LIME}'●'${RESET}' User: '${RED}'%-12s'${RESET}' Home: %-15s Shell: %s\n", $1, $6, $7}' /etc/passwd
 
-# --- Disks ---
-print_header "💾 STORAGE DEVICES"
+# --- Disks Smart Scan ---
+print_header "💾 STORAGE DEVICES (SMART)"
 raid_disks=$(smartctl --scan | grep megaraid || true)
 
 if [ -n "$raid_disks" ]; then
@@ -107,13 +104,23 @@ else
         health=$(smartctl -H /dev/$disk | grep -E "overall-health|result" | awk -F: '{print $2}' | xargs)
         [[ "$health" == "PASSED" || "$health" == "OK" ]] && printf "Health: ${LIME}%s${RESET}\n" "$health" || printf "Health: ${RED}%s${RESET}\n" "$health"
         
-        # Samsung 980/990 Pro Check
         if [[ "$model" =~ "Samsung" && ("$model" =~ "980 PRO" || "$model" =~ "990 PRO") ]]; then
             fw=$(smartctl -i /dev/$disk | grep "Firmware Version" | awk -F: '{print $2}' | xargs)
             [[ "$fw" < "5B2QGXA7" ]] && printf "${RED}Firmware: %s — Update recommended!${RESET}\n" "$fw" || printf "${LIME}Firmware: %s — OK${RESET}\n" "$fw"
         fi
     done
 fi
+
+# --- Mount Points Check ---
+print_header "📂 MOUNT POINTS & USAGE"
+# Виводимо лише sda, nvme, hdd (vda для віртуалок)
+lsblk -o NAME,FSTYPE,SIZE,MOUNTPOINT,PATH | grep -E "^NAME|sd|nvme|hd|vd" | while read -r line; do
+    if [[ "$line" == *"/"* ]]; then
+        printf "${LIME}%s${RESET}\n" "$line"
+    else
+        echo "$line"
+    fi
+done
 
 # --- Network & iperf3 ---
 print_header "🌐 NETWORK & SPEED"
@@ -135,7 +142,6 @@ if [ -n "$SERVER" ]; then
     iperf3 -c $SERVER -P 10 -f m -t 10 > /tmp/iperf_res 2>&1 &
     iperf_pid=$!
 
-    # Visual Progress Bar for iperf3
     for i in {1..10}; do
         if ps -p $iperf_pid > /dev/null; then
             printf "\r  ["; for j in $(seq 1 $i); do printf "#"; done; for j in $(seq $i 9); do printf "."; done; printf "] ${i}0%%"
@@ -143,7 +149,7 @@ if [ -n "$SERVER" ]; then
         fi
     done
     wait $iperf_pid
-    printf "\r  ${LIME}[OK] Test completed!${RESET}                      \n"
+    printf "\r  ${LIME}[OK] Test completed!                      \n"
 
     RAW_DATA=$(grep "receiver" /tmp/iperf_res | tail -n1)
     if [[ "$RAW_DATA" =~ ([0-9.]+)[[:space:]]Mbits/sec ]]; then
