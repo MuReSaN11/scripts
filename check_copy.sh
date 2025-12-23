@@ -1,6 +1,7 @@
 #!/bin/bash
 
-GREEN="\e[32m"
+# Кольори
+YELLOW="\e[33m"
 RED="\e[31m"
 RESET="\e[0m"
 INFO="\e[36m"
@@ -9,7 +10,7 @@ INFO="\e[36m"
 install_pkg() {
     local pkgs=("$@")
     if command -v apt-get >/dev/null 2>&1; then
-        # Перевірка на блокування apt (якщо запущено інше оновлення)
+        # Перевірка на блокування apt
         while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 ; do
             echo -ne "\r${RED}[WAIT]${RESET} Waiting for other package manager to finish..."
             sleep 2
@@ -23,7 +24,7 @@ install_pkg() {
         while read prog; do
             echo -ne "\r${INFO}[INFO] Installing packages... ${prog}%${RESET}"
         done
-        echo -e "\r${GREEN}[INFO] Installing packages... 100% - Done!${RESET}"
+        echo -e "\r${YELLOW}[INFO] Installing packages... 100% - Done!${RESET}"
         
     elif command -v dnf >/dev/null 2>&1; then
         dnf install -y "${pkgs[@]}" --quiet
@@ -41,7 +42,7 @@ echo -e "\n${INFO}===== SERVER INFORMATION =====${RESET}"
 echo -e "${INFO}[OS INFO]${RESET}"
 if [ -f /etc/os-release ]; then
     OS_PRETTY=$(grep "PRETTY_NAME" /etc/os-release | cut -d'"' -f2)
-    echo -e "${GREEN}${OS_PRETTY}${RESET}"
+    echo -e "${YELLOW}${OS_PRETTY}${RESET}"
 fi
 
 # ================== Users ==================
@@ -59,14 +60,14 @@ if [ -n "$raid_disks" ]; then
     echo "$raid_disks" | while read -r line; do
         dev=$(echo "$line" | awk '{print $1}')
         num=$(echo "$line" | grep -o 'megaraid,[0-9]\+' | cut -d, -f2)
-        echo -e "\n${GREEN}=== RAID Physical Disk $num ===${RESET}"
+        echo -e "\n${YELLOW}=== RAID Physical Disk $num ===${RESET}"
         model=$(smartctl -i -d megaraid,$num $dev | grep -E "Model|Device Model" | awk -F: '{print $2}' | xargs)
         echo "Model: ${model:-Virtual/Unknown}"
     done
 else
     for disk in $(lsblk -d -n -o NAME,TYPE | awk '$2=="disk"{print $1}'); do
         size=$(lsblk -dn -o SIZE /dev/$disk)
-        echo -e "\n${GREEN}=== $disk ( $size) ===${RESET}"
+        echo -e "\n${YELLOW}=== $disk ( $size) ===${RESET}"
         model=$(smartctl -i /dev/$disk 2>/dev/null | grep -E "Model|Device Model" | awk -F: '{print $2}' | xargs)
         [[ -z "$model" ]] && model=$(lsblk -dn -o MODEL /dev/$disk | xargs)
         echo "Model: ${model:-Virtual/Generic}"
@@ -81,14 +82,14 @@ lsblk -o NAME,SIZE,FSTYPE,TYPE,MOUNTPOINT | grep -E "disk|part" | grep -vE "loop
 echo -e "\n${INFO}[CPU]${RESET}"
 cpu_model=$(lscpu | grep "Model name:" | sed 's/Model name:\s*//')
 [[ -z "$cpu_model" ]] && cpu_model=$(lscpu | grep "BIOS" | sed 's/BIOS\s*//')
-echo -e "Model: ${GREEN}$cpu_model${RESET}"
+echo -e "Model: ${YELLOW}$cpu_model${RESET}"
 echo "Cores: $(lscpu | grep "^CPU(s):" | awk '{print $2}')"
 
 # ================== RAM ==================
 echo -e "\n${INFO}[RAM]${RESET}"
 mem_total_mb=$(free -m | awk '/Mem:/ {print $2}')
 mem_total_gb=$(( (mem_total_mb + 512) / 1024 ))
-echo -e "Total RAM: ${GREEN}~${mem_total_gb} GB${RESET}"
+echo -e "Total RAM: ${YELLOW}~${mem_total_gb} GB${RESET}"
 
 # ================== Network ==================
 echo -e "\n${INFO}[NETWORK]${RESET}"
@@ -125,10 +126,10 @@ if [ -n "$SERVER" ]; then
 
     RAW_RESULT=$(grep "\[SUM\].*receiver" /tmp/iperf_res | tail -n1)
     
-    # Підсвітка GBytes у результаті
+    # Підсвітка GBytes у жовтий
     if [[ "$RAW_RESULT" =~ ([0-9.]+[[:space:]]GBytes) ]]; then
         VALUE="${BASH_REMATCH[1]}"
-        RESULT=$(echo "$RAW_RESULT" | sed "s/$VALUE/${GREEN}$VALUE${RESET}/")
+        RESULT=$(echo "$RAW_RESULT" | sed "s/$VALUE/${YELLOW}$VALUE${RESET}/")
     else
         RESULT="$RAW_RESULT"
     fi
