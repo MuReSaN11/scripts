@@ -10,7 +10,7 @@ INFO="\e[36m"
 install_pkg() {
     local pkgs=("$@")
     if command -v apt-get >/dev/null 2>&1; then
-        # Перевірка на блокування apt
+        # Перевірка на блокування apt іншими процесами
         while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 ; do
             echo -ne "\r${RED}[WAIT]${RESET} Waiting for other package manager to finish..."
             sleep 2
@@ -19,12 +19,13 @@ install_pkg() {
         apt-get update -qq
         echo -ne "${INFO}[INFO] Installing packages... 0%${RESET}"
         
+        # Встановлення з відстеженням прогресу
         DEBIAN_FRONTEND=noninteractive apt-get install -y "${pkgs[@]}" -qq -o Dpkg::Use-Pty=0 2>&1 | \
         stdbuf -oL sed -n 's/^Progress: \[\([0-9]*\)%\].*/\1/p' | \
         while read prog; do
             echo -ne "\r${INFO}[INFO] Installing packages... ${prog}%${RESET}"
         done
-        echo -e "\r${YELLOW}[INFO] Installing packages... 100% - Done!${RESET}"
+        echo -e "\r${INFO}[INFO] Installing packages... 100% - Done!${RESET}"
         
     elif command -v dnf >/dev/null 2>&1; then
         dnf install -y "${pkgs[@]}" --quiet
@@ -33,7 +34,7 @@ install_pkg() {
     fi
 }
 
-# Встановлення необхідного софту
+# Встановлення необхідних утиліт
 install_pkg iperf3 smartmontools curl lshw dmidecode ethtool
 
 echo -e "\n${INFO}===== SERVER INFORMATION =====${RESET}"
@@ -42,6 +43,7 @@ echo -e "\n${INFO}===== SERVER INFORMATION =====${RESET}"
 echo -e "${INFO}[OS INFO]${RESET}"
 if [ -f /etc/os-release ]; then
     OS_PRETTY=$(grep "PRETTY_NAME" /etc/os-release | cut -d'"' -f2)
+    # Жовтим підсвічуємо назву ОС
     echo -e "${YELLOW}${OS_PRETTY}${RESET}"
 fi
 
@@ -67,6 +69,7 @@ if [ -n "$raid_disks" ]; then
 else
     for disk in $(lsblk -d -n -o NAME,TYPE | awk '$2=="disk"{print $1}'); do
         size=$(lsblk -dn -o SIZE /dev/$disk)
+        # Жовтим підсвічуємо заголовок диска
         echo -e "\n${YELLOW}=== $disk ( $size) ===${RESET}"
         model=$(smartctl -i /dev/$disk 2>/dev/null | grep -E "Model|Device Model" | awk -F: '{print $2}' | xargs)
         [[ -z "$model" ]] && model=$(lsblk -dn -o MODEL /dev/$disk | xargs)
@@ -76,12 +79,14 @@ fi
 
 # ================== Mount Points ==================
 echo -e "\n${INFO}[MOUNT POINTS]${RESET}"
+# Тільки реальні диски та розділи
 lsblk -o NAME,SIZE,FSTYPE,TYPE,MOUNTPOINT | grep -E "disk|part" | grep -vE "loop|ram|sr"
 
 # ================== CPU ==================
 echo -e "\n${INFO}[CPU]${RESET}"
 cpu_model=$(lscpu | grep "Model name:" | sed 's/Model name:\s*//')
 [[ -z "$cpu_model" ]] && cpu_model=$(lscpu | grep "BIOS" | sed 's/BIOS\s*//')
+# Жовтим підсвічуємо модель процесора
 echo -e "Model: ${YELLOW}$cpu_model${RESET}"
 echo "Cores: $(lscpu | grep "^CPU(s):" | awk '{print $2}')"
 
@@ -89,6 +94,7 @@ echo "Cores: $(lscpu | grep "^CPU(s):" | awk '{print $2}')"
 echo -e "\n${INFO}[RAM]${RESET}"
 mem_total_mb=$(free -m | awk '/Mem:/ {print $2}')
 mem_total_gb=$(( (mem_total_mb + 512) / 1024 ))
+# Жовтим підсвічуємо кількість RAM
 echo -e "Total RAM: ${YELLOW}~${mem_total_gb} GB${RESET}"
 
 # ================== Network ==================
@@ -112,9 +118,11 @@ esac
 
 if [ -n "$SERVER" ]; then
     echo "Server: $SERVER"
+    # Запуск iperf3 у фоні
     iperf3 -c $SERVER -P 10 -f m -t 10 2>/dev/null > /tmp/iperf_res &
     iperf_pid=$!
 
+    # Таймер на 10 секунд
     for i in {10..1}; do
         if ps -p $iperf_pid > /dev/null; then
             echo -ne "\rTesting speed... ${i}s left "
@@ -126,7 +134,7 @@ if [ -n "$SERVER" ]; then
 
     RAW_RESULT=$(grep "\[SUM\].*receiver" /tmp/iperf_res | tail -n1)
     
-    # Підсвітка GBytes у жовтий
+    # Жовтим підсвічуємо лише частину з GBytes
     if [[ "$RAW_RESULT" =~ ([0-9.]+[[:space:]]GBytes) ]]; then
         VALUE="${BASH_REMATCH[1]}"
         RESULT=$(echo "$RAW_RESULT" | sed "s/$VALUE/${YELLOW}$VALUE${RESET}/")
