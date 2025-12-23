@@ -10,10 +10,6 @@ TOTAL_RAM=$(free -h --giga | awk '/^Mem:/ {print $2}' | sed 's/Gi/Gb/')
 RAM_DETAILS=$(sudo dmidecode -t memory 2>/dev/null | grep -E "Size: [0-9]+" | grep -v "No Module Installed" | awk '{count++; sum=$2; unit=$3} END {print "("count"x"sum unit")"}')
 echo "RAM : $TOTAL_RAM $RAM_DETAILS"
 
-# DISK (Тільки фізичні диски)
-# -d виводить тільки "parent" пристрої (без розділів)
-# -n прибирає заголовок
-# -o вказує потрібні колонки
 DISK_INFO=$(lsblk -dnio SIZE,TYPE,TRAN | grep "disk" | awk '{
     type=$3; 
     if(type=="") type="SATA/SAS"; 
